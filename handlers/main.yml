@@ -1,2 +1,18 @@
 ---
-# handlers file for pihole
+- name: restart lighttpd
+  become: True
+  service:
+    name=lighttpd
+    state=restarted
+
+- name: restart dnsmasq
+  become: True
+  service:
+    name=dnsmasq
+    state=restarted
+
+- name: restart dhcpcd
+  become: True
+  service:
+    name=dhcpcd
+    state=restarted

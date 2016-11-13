@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+
+piholeInterface={{ network_interface }}
+IPv4_address={{ ipv4_address }}
+IPv6_address={{ ipv6_address }}
+piholeDNS1={{ dns_servers[0] }}
+piholeDNS1={{ dns_servers[1] }}
+configDirectory={{ fspath_pihole_config }}
+installDirectory={{ fspath_pihole }}

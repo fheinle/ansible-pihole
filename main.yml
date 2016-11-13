@@ -1,0 +1,4 @@
+---
+- name: install
+  hosts: vb
+  roles: pihole

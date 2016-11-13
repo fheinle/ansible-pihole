@@ -1,8 +1,11 @@
 ---
 git_repo_web_interface: "https://github.com/pi-hole/AdminLTE.git"
-git_repo_core: "https://github.com/pi-hole/pi-hole.git"
-fspath_web_interface: "/var/www/html/admin"
-fspath_pihole: "/etc/.pihole"
+git_repo_core: "https://github.com/fheinle/pi-hole.git"
+fspath_web_interface: "/var/www/admin"
+fspath_web_directory: "/var/www/pihole"
+fspath_pihole: "/opt/pihole"
+fspath_pihole_src: "/etc/.pihole"
+fspath_pihole_config: "/etc/pihole"
 install_deps:
   - "apt-utils"
   - whiptail
@@ -11,7 +14,6 @@ install_deps:
   - dnsutils
   - bc
   - dnsmasq
-  - lighttpd
   - curl
   - unzip
   - wget
@@ -19,13 +21,31 @@ install_deps:
   - netcat
   - cron
   - iproute2
-lighttpd_user: "www-data"
-lighttpd_group: "www-data"
-dnsmasq_user: "dnsmasq"
-network_interace: eth0
-ipv6: True
+user_pihole: "pihole"
+group_pihole: "pihole"
+# These need to match the ones supplied to the LigHTTPD role!
+user_lighttpd: "www-data"
+group_lighttpd: "www-data"
+user_dnsmasq: "dnsmasq"
+network_interface: eth0
 ipv4_static: True
-dns_server:
+ipv4_address: "{{ hostvars[inventory_hostname]['ansible_' + network_interface]['ipv4']['address'] }}"
+# per default just use the first available ipv6 address on the interface
+ipv6: True
+ipv6_address: "{{ hostvars[inventory_hostname]['ansible_' + network_interface]['ipv6'][0]['address'] }}"
+dns_servers:
   - "8.8.8.8"
   - "8.8.4.4"
-firewall_setup: True
+firewall_setup: False
+lighttpd_access_log: True
+pihole_log: True
+firewall_ports:
+  http:
+    port: 80
+    proto: tcp
+  dns:
+    port: 53
+    proto: udp
+  dnstcp:
+    port: 53
+    proto: tcp

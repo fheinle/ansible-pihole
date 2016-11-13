@@ -1,2 +1,273 @@
 ---
-# tasks file for pihole
+- name: install pihole dependencies
+  become: True
+  apt:
+    update_cache=True
+    cache_valid_time=3600
+    name="{{ item }}"
+    state=present
+  with_items: "{{ install_deps }}"
+
+- name: create pihole group
+  become: True
+  group:
+    name="{{ group_pihole }}"
+    state=present
+
+- name: create pihole user
+  become: True
+  user:
+    name="{{ user_pihole }}"
+    group="{{ group_pihole }}"
+    groups="{{ group_pihole }},{{ group_lighttpd }}"
+    comment="ad filtering DNS proxy"
+    system=True
+    shell="/usr/sbin/nologin"
+
+- name: create pihole configuration directory
+  become: True
+  file:
+    name="{{ fspath_pihole_config }}"
+    state=directory
+    owner="{{ user_pihole }}"
+    group="{{ group_pihole }}"
+    mode=0755
+
+- name: create directory for pihole source
+  become: True
+  file:
+    path="{{ fspath_pihole_src }}"
+    state=directory
+    owner=root
+    group=root
+    mode=0755
+
+- name: download pihole
+  become: True
+  git:
+    repo="{{ git_repo_core }}"
+    dest="{{ fspath_pihole_src }}"
+
+- name: download pihole web interface
+  become: True
+  git:
+    repo="{{ git_repo_web_interface }}"
+    dest="{{ fspath_web_interface }}"
+  tags:
+    - fjord
+
+- name: create directory for pihole scripts
+  become: True
+  file:
+    path="{{ fspath_pihole }}/"
+    state=directory
+    owner=root
+    group=root
+    mode=0755
+
+- name: create list of pihole scripts
+  shell: "ls *.sh"
+  args:
+    chdir: "{{ fspath_pihole_src }}/advanced/Scripts"
+  register: pihole_scripts_list
+
+- name: make all the pihole scripts executable
+  become: True
+  file:
+    name="{{ fspath_pihole_src }}/advanced/Scripts/{{ item }}"
+    mode=0755
+  with_items: "{{ pihole_scripts_list.stdout_lines }}"
+
+- name: install pihole scripts
+  become: True
+  file:
+    src="{{ fspath_pihole_src }}/advanced/Scripts/{{ item }}"
+    dest="{{ fspath_pihole }}/{{ item }}"
+    owner=root
+    group=root
+    mode=0755
+    state=link
+  with_items:
+    - "{{ pihole_scripts_list.stdout_lines }}"
+
+- name: install gravity rules updater
+  become: True
+  file:
+    src="{{ fspath_pihole_src }}/gravity.sh"
+    dest="{{ fspath_pihole }}/gravity.sh"
+    owner=root
+    group=root
+    mode=0755
+    state=link
+
+- name: install pihole command
+  become: True
+  file:
+    src="{{ fspath_pihole_src }}/pihole"
+    dest="{{ fspath_pihole }}/pihole"
+    owner=root
+    group=root
+    mode=0755
+    state=link
+
+- name: install bash completion for pihole
+  become: True
+  copy:
+    src="{{ fspath_pihole_src }}/advanced/bash-completion/pihole"
+    remote_src=True
+    dest="/etc/bash_completion.d"
+    owner=root
+    group=root
+    mode=0644
+
+- name: install lighttpd config snippet for pihole
+  become: True
+  template:
+    src="lighttpd.conf.j2"
+    dest="/etc/lighttpd/conf-available/10-pihole.conf"
+    owner=root
+    group=root
+    mode=0644
+  notify:
+    - restart lighttpd
+  tags:
+    - fjord
+
+- name: enable fastcgi and fastcgi php for lighttpd
+  become: True
+  command: "lighty-enable-mod fastcgi fastcgi-php pihole"
+  args:
+    creates: "/etc/lighttpd/conf-enabled/*fastcgi-php.conf"
+  tags:
+    - fjord
+
+- name: set static IP for the host
+  become: True
+  blockinfile:
+    dest: "/etc/dhcpcd.conf"
+    block: |
+      static ip_address={{ ansible_default_ipv4.address }}
+      static router={{ ansible_default_ipv4.gateway }}
+      static domain_name_servers={{ ansible_default_ipv4.address }}
+  notify:
+    - restart dhcpcd
+
+- name: install dnsmasq config snippet for pihole
+  become: True
+  template:
+    src="dnsmasq.conf.j2"
+    dest="/etc/dnsmasq.d/01-pihole.conf"
+    owner=root
+    group=root
+    mode=0644
+  notify: restart dnsmasq
+
+- name: create logfile for pihole
+  become: True
+  copy:
+    content=""
+    dest="/var/log/pihole.log"
+    owner={{ user_dnsmasq }}
+    group=root
+    mode=0644
+
+- name: create pihole configuration
+  become: True
+  template:
+    src="setupVars.conf.j2"
+    dest="{{ fspath_pihole_config }}/setupVars.conf"
+    owner=root
+    group=root
+    mode=0644
+
+- name: create pihole web directory
+  become: True
+  file:
+    name="{{ fspath_web_directory }}"
+    state=directory
+    owner="{{ user_lighttpd }}"
+    group="{{ group_lighttpd }}"
+    mode="0755"
+  tags:
+    - fjord
+
+- name: install pihole custom index page
+  become: True
+  file:
+    src="{{ fspath_pihole_src }}/advanced/{{ item }}"
+    dest="{{ fspath_web_directory }}/{{ item }}"
+    state=link
+    owner={{ user_lighttpd }}
+    group={{ group_lighttpd }}
+    mode=0644
+  with_items:
+    - index.html
+    - index.js
+  tags:
+    - fjord
+
+- name: install pihole sudoers file
+  become: True
+  copy:
+    src="{{ fspath_pihole_src }}/advanced/pihole.sudo"
+    dest="/etc/sudoers.d/pihole"
+    remote_src=True
+    owner=root
+    group=root
+    mode=0644
+    validate="visudo -cf %s"
+
+- name: install pihole cronjob (weekly ad update)
+  become: True
+  cron:
+    name="Weekly ad update"
+    cron_file="/etc/cron.d/pihole"
+    user=pihole
+    weekday=7
+    hour=1
+    minute=59
+    job="{{ fspath_pihole }}/pihole updateGravity"
+    state=present
+
+- name: install pihole cronjob (daily log flush)
+  become: True
+  cron:
+    name="Daily log flush"
+    cron_file="/etc/cron.d/pihole"
+    user=pihole
+    hour="0"
+    minute="0"
+    job="{{ fspath_pihole}}/pihole flush"
+    state=present
+
+- name: configure firewall for http and dns (ipv4)
+  become: True
+  iptables:
+    chain="INPUT"
+    comment="{{ item.key }}"
+    protocol="{{ item.value.proto }}"
+    destination_port="{{ item.value.port }}"
+    jump="ACCEPT"
+    ip_version="ipv4"
+  with_dict: "{{ firewall_ports }}"
+  when: "{{ firewall_setup }}"
+
+- name: configure firewall for http and dns (ipv6)
+  become: True
+  iptables:
+    chain="INPUT"
+    comment="{{ item.key }}"
+    protocol="{{ item.value.proto }}"
+    destination_port="{{ item.value.port }}"
+    jump="ACCEPT"
+    ip_version="ipv6"
+  with_dict: "{{ firewall_ports }}"
+  when:
+    - "{{ ipv6 }}"
+    - "{{ firewall_setup }}"
+
+- name: run gravity.sh to populate ad blocklist
+  become: True
+  command: "{{ fspath_pihole }}/gravity.sh"
+  args:
+    creates="{{ fspath_pihole_config }}/adlists.default"

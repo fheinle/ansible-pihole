@@ -1,0 +1,29 @@
+server.modules += (
+    "mod_access",
+    "mod_accesslog",
+    "mod_expire",
+    "mod_compress",
+    "mod_redirect",
+    "mod_setenv",
+    "mod_rewrite"
+)
+
+server.error-handler-404    = "pihole/index.html"
+{% if lighttpd_access_log %}
+accesslog.filename          = "/var/log/lighttpd/access.log"
+{% raw %}accesslog.format			= "%{%s}t|%V|%r|%s|%b"{% endraw %}
+{% endif %}
+$HTTP["url"] =~ "^/admin/" {
+	# Create a response header for debugging using curl -I
+    setenv.add-response-header = (
+        "X-Pi-hole" => "The Pi-hole Web interface is working!",
+        "X-Frame-Options" => "DENY"
+    )
+}
+# If the URL does not start with /admin, then it is a query for an ad domain
+$HTTP["url"] =~ "^(?!/admin)/.*" {
+    # Create a response header for debugging using curl -I
+    setenv.add-response-header = ( "X-Pi-hole" => "A black hole for Internet advertisements." )
+    # rewrite only js requests
+    url.rewrite = ("(.*).js" => "pihole/index.js")
+}

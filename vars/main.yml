@@ -1,2 +1,4 @@
 ---
 # vars file for pihole
+
+firewall_setup: True
