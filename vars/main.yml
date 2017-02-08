@@ -2,3 +2,4 @@
 # vars file for pihole
 
 firewall_setup: True
+ipv4_address: "{{ ansible_default_ipv4 }}"
